@@ -1,104 +1,121 @@
-let amp;
-let mic;
-let ripples = [];
-let lastDropTime = 0;
-let dropInterval = 300;
+let mic, fft;
+let circles = [];
+let pinkOverlay;
+let t = 0;
 
 function setup() {
-  createCanvas(600, 600);
-  background(255, 253, 208); // Cremefarbener Hintergrund
-  noStroke();
+  createCanvas(595, 842); // A4
+  background('#D2DB76'); // Hintergrund grün
 
   mic = new p5.AudioIn();
   mic.start();
 
-  amp = new p5.Amplitude();
-  amp.setInput(mic);
+  fft = new p5.FFT(0.8, 1024);
+  fft.setInput(mic);
+
+  // Kreise (größer fürs A4-Format)
+  circles.push(new RadialWave(150, 200, 60, [20, 100]));
+  circles.push(new RadialWave(300, 130, 80, [100, 300]));
+  circles.push(new RadialWave(450, 250, 70, [300, 1000]));
+  circles.push(new RadialWave(350, 400, 90, [1000, 2000]));
+  circles.push(new RadialWave(180, 550, 50, [2000, 5000]));
+  circles.push(new RadialWave(400, 700, 75, [5000, 10000]));
+
+  // Extra-Canvas für Schleier
+  pinkOverlay = createGraphics(width, height);
+  pinkOverlay.clear(); // Transparent starten
 }
 
 function draw() {
-  let level = amp.getLevel();
+  background('#D2DB76');
 
-  drawCentralSineLines(level); // Begrenzte Wellenlinien
+  let spectrum = fft.analyze();
 
-  // Halbtransparentes Overlay für Ausklang
-  fill(255, 253, 208, 40);
-  rect(0, 0, width, height);
-
-  if (level > 0.08 && millis() - lastDropTime > dropInterval) {
-    let newRipple = new Ripple(random(width), random(height), level);
-    ripples.push(newRipple);
-    lastDropTime = millis();
+  // Bewegung und Darstellung der Kreise
+  for (let c of circles) {
+    c.update(spectrum);
+    c.move();
+    c.display();
   }
 
-  for (let i = ripples.length - 1; i >= 0; i--) {
-    ripples[i].update();
-    ripples[i].display();
-    if (ripples[i].isDone()) {
-      ripples.splice(i, 1);
-    }
+  // Schleier zeichnen
+  pinkOverlay.clear();
+  pinkOverlay.noStroke();
+  pinkOverlay.fill(255, 195, 204, 80); // Rosa mit Transparenz
+
+  // Sinuskurve von unten links nach oben rechts
+  let step = 10;
+  for (let x = 0; x <= width; x += step) {
+    let y = height - x + sin(x * 0.02 + t) * 100;
+    pinkOverlay.ellipse(x, y, 320, 120); // breite des Schleiers
   }
+
+  // Freistellen der Kreise aus dem Schleier
+  for (let c of circles) {
+    pinkOverlay.erase(); // Ab hier löschen statt zeichnen
+    pinkOverlay.ellipse(c.x, c.y, c.dynamicRadius * 2.2);
+    pinkOverlay.noErase(); // Danach wieder zeichnen
+  }
+
+  // Schleier anzeigen
+  image(pinkOverlay, 0, 0);
+
+  t += 0.01; // Zeit für Sinusbewegung
 }
 
-function drawCentralSineLines(level) {
-  let spacing = 8;
-  let waveAmplitude = map(level, 0, 0.3, 2, 10);
-  let waveSpeed = frameCount * 0.02;
-
-  stroke(255, 100, 150, 127); // Rosa
-  noFill();
-
-  // Begrenzter Bereich der Linien
-  for (let x = 80; x < width - 80; x += spacing) {
-    beginShape();
-    for (let y = 0; y < height; y += 4) {
-      let offsetX = sin(y * 0.05 + waveSpeed + x * 0.02) * waveAmplitude;
-      vertex(x + offsetX, y);
-    }
-    endShape();
-  }
-}
-
-class Ripple {
-  constructor(x, y, level) {
+class RadialWave {
+  constructor(x, y, baseRadius, freqRange) {
     this.x = x;
     this.y = y;
-    this.r = 0;
-    this.maxRadius = map(level, 0.08, 0.3, 30, 80);
-    this.alpha = 180;
-    this.level = level;
-    this.strokeCol = color(50, 180, 200, this.alpha); // Türkis
+    this.baseRadius = baseRadius;
+    this.freqRange = freqRange;
+    this.dynamicRadius = baseRadius;
+    this.numLines = 200;
+
+    this.dx = random(-0.2, 0.2);
+    this.dy = random(-0.2, 0.2);
   }
 
-  update() {
-    this.r += 1.2;
-    this.alpha -= 1.5;
+  update(spectrum) {
+    let [lowFreq, highFreq] = this.freqRange;
+    let energy = fft.getEnergy(lowFreq, highFreq);
+    let target = this.baseRadius + map(energy, 0, 255, 0, 180);
+    this.dynamicRadius = lerp(this.dynamicRadius, target, 0.2);
+  }
+
+  move() {
+    this.x += this.dx;
+    this.y += this.dy;
+
+    if (this.x < 0 || this.x > width) this.dx *= -1;
+    if (this.y < 0 || this.y > height) this.dy *= -1;
   }
 
   display() {
     push();
+    translate(this.x, this.y);
 
-    // Grauer Schleier um den Tropfen
-    noStroke();
-    fill(120, 120, 120, this.alpha * 0.3);
-    ellipse(this.x, this.y, this.r * 2.8);
-
-    // Maximal 3 Ringe mit mehr Abstand
+    stroke(0, 70, 200, 100);
+    strokeWeight(0.6);
     noFill();
-    stroke(this.strokeCol);
-    strokeWeight(1.5);
-    let ringSpacing = 10;
-    for (let i = 0; i < 3; i++) {
-      let currentR = this.r - i * ringSpacing;
-      if (currentR > 0) {
-        ellipse(this.x, this.y, currentR * 2);
-      }
+
+    for (let i = 0; i < this.numLines; i++) {
+      let angle = TWO_PI * i / this.numLines;
+      let r1 = 5;
+      let r2 = this.dynamicRadius;
+      let x1 = cos(angle) * r1;
+      let y1 = sin(angle) * r1;
+      let x2 = cos(angle) * r2;
+      let y2 = sin(angle) * r2;
+      line(x1, y1, x2, y2);
+    }
+
+    noStroke();
+    for (let r = 20; r > 0; r -= 1) {
+      fill(0, 70, 200, map(r, 20, 0, 80, 0));
+      ellipse(0, 0, r * 2);
     }
 
     pop();
-  }
-
-  isDone() {
-    return this.alpha <= 0;
   }
 }
