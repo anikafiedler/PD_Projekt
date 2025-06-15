@@ -40,11 +40,11 @@ function drawFlowLines() {
 
   for (let i = 0; i < lineCount; i++) {
     beginShape();
-    for (let x = 0; x < width; x += 11) {
-      let t = frameCount * 0.01;
-      let y = height / 5
+    for (let x = 0; x < width; x += 5) {
+      let t = frameCount * 0.10;
+      let y = height / 10
               + sin(x * 0.01 + i * 0.15 + t) * 40
-              + sin(x * 0.008 + i * 0.05 + t * 1.2) * 60;
+              + sin(x * 0.009 + i * 0.05 + t * 1.2) * 60;
       vertex(x, y + i * spacing);
     }
     endShape();
@@ -57,13 +57,19 @@ function drawYellowCircles() {
   noStroke();
   fill(255, 215, 0, 165); // 65 % Deckkraft
 
-  // Hol dir Energie aus einem Frequenzbereich
-  let energy = fft.getEnergy(100, 1000); // z. B. Mitten (Sprache, Beats)
+  let energy = fft.getEnergy(100, 1000); // Frequenzbereich
 
-  // Bewegungsfaktor abhängig von Energie
-  let scale = map(energy, 0, 255, 0.9, 1.4); // skaliert Radius
+  let scale = map(energy, 0, 255, 0.9, 1.4); // Größe
+
+  // Bewegung je nach Energie
+  let moveAmount = map(energy, 0, 255, 0, 5);
 
   for (let c of yellowCircles) {
-    ellipse(c.x, c.y, c.r * 2 * scale); // skaliert live mit dem Ton
+    // zufällige kleine Bewegung
+    let offsetX = random(-moveAmount, moveAmount);
+    let offsetY = random(-moveAmount, moveAmount);
+
+    ellipse(c.x + offsetX, c.y + offsetY, c.r * 2 * scale);
   }
 }
+

@@ -2,10 +2,11 @@ let mic, fft;
 let circles = [];
 let pinkOverlay;
 let t = 0;
+let threshold = 0.05; // minimale Lautstärke für Bewegung
 
 function setup() {
   createCanvas(595, 842); // A4
-  background('#D2DB76'); // Hintergrund grün
+  background('#D2DB76');
 
   mic = new p5.AudioIn();
   mic.start();
@@ -13,7 +14,6 @@ function setup() {
   fft = new p5.FFT(0.8, 1024);
   fft.setInput(mic);
 
-  // Kreise (größer fürs A4-Format)
   circles.push(new RadialWave(150, 200, 60, [20, 100]));
   circles.push(new RadialWave(300, 130, 80, [100, 300]));
   circles.push(new RadialWave(450, 250, 70, [300, 1000]));
@@ -21,48 +21,54 @@ function setup() {
   circles.push(new RadialWave(180, 550, 50, [2000, 5000]));
   circles.push(new RadialWave(400, 700, 75, [5000, 10000]));
 
-  // Extra-Canvas für Schleier
   pinkOverlay = createGraphics(width, height);
-  pinkOverlay.clear(); // Transparent starten
+  pinkOverlay.clear();
 }
 
 function draw() {
   background('#D2DB76');
 
   let spectrum = fft.analyze();
+  let volume = mic.getLevel(); // Lautstärke von 0.0 bis 1.0
 
-  // Bewegung und Darstellung der Kreise
-  for (let c of circles) {
-    c.update(spectrum);
-    c.move();
-    c.display();
+  // 🎚 Bewege den Schleier nur bei Ton
+  if (volume > threshold) {
+    let speed = map(volume, threshold, 1.0, 0.001, 0.05, true);
+    t += speed;
   }
 
-  // Schleier zeichnen
+  // 🎀 ROSA SCHLEIER – immer sichtbar
   pinkOverlay.clear();
   pinkOverlay.noStroke();
   pinkOverlay.fill(255, 195, 204, 80); // Rosa mit Transparenz
 
-  // Sinuskurve von unten links nach oben rechts
   let step = 10;
   for (let x = 0; x <= width; x += step) {
     let y = height - x + sin(x * 0.02 + t) * 100;
-    pinkOverlay.ellipse(x, y, 320, 120); // breite des Schleiers
+    pinkOverlay.ellipse(x, y, 320, 120); // Schleierform
   }
 
-  // Freistellen der Kreise aus dem Schleier
-  for (let c of circles) {
-    pinkOverlay.erase(); // Ab hier löschen statt zeichnen
-    pinkOverlay.ellipse(c.x, c.y, c.dynamicRadius * 2.2);
-    pinkOverlay.noErase(); // Danach wieder zeichnen
+  // ⭕️ KREISE – nur wenn Ton vorhanden
+  if (volume > threshold) {
+    for (let c of circles) {
+      c.update(spectrum, volume);
+      c.move(volume);
+      c.display();
+    }
+
+    // Schleier um Kreise herum ausradieren
+    for (let c of circles) {
+      pinkOverlay.erase();
+      pinkOverlay.ellipse(c.x, c.y, c.dynamicRadius * 2.2);
+      pinkOverlay.noErase();
+    }
   }
 
-  // Schleier anzeigen
+  // ➕ Schleier immer anzeigen
   image(pinkOverlay, 0, 0);
-
-  t += 0.01; // Zeit für Sinusbewegung
 }
 
+// 🔁 KLASSE: RadialWave
 class RadialWave {
   constructor(x, y, baseRadius, freqRange) {
     this.x = x;
@@ -72,23 +78,29 @@ class RadialWave {
     this.dynamicRadius = baseRadius;
     this.numLines = 200;
 
-    this.dx = random(-0.2, 0.2);
-    this.dy = random(-0.2, 0.2);
+    this.baseDx = random(-0.2, 0.2);
+    this.baseDy = random(-0.2, 0.2);
+    this.dx = this.baseDx;
+    this.dy = this.baseDy;
   }
 
-  update(spectrum) {
+  update(spectrum, volume) {
     let [lowFreq, highFreq] = this.freqRange;
     let energy = fft.getEnergy(lowFreq, highFreq);
     let target = this.baseRadius + map(energy, 0, 255, 0, 180);
     this.dynamicRadius = lerp(this.dynamicRadius, target, 0.2);
   }
 
-  move() {
+  move(volume) {
+    // Bewegung stärker bei mehr Lautstärke
+    this.dx = this.baseDx * map(volume, threshold, 1.0, 0, 10, true);
+    this.dy = this.baseDy * map(volume, threshold, 1.0, 0, 10, true);
+
     this.x += this.dx;
     this.y += this.dy;
 
-    if (this.x < 0 || this.x > width) this.dx *= -1;
-    if (this.y < 0 || this.y > height) this.dy *= -1;
+    if (this.x < 0 || this.x > width) this.baseDx *= -1;
+    if (this.y < 0 || this.y > height) this.baseDy *= -1;
   }
 
   display() {
